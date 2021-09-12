@@ -107,6 +107,11 @@ func (e *EventStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Len returns the number of connected clients
+func (e *EventStream) Len() int {
+	return len(e.clients)
+}
+
 func (e *EventStream) run() {
 	for {
 		select {
