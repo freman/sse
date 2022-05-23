@@ -58,10 +58,15 @@ func (e *EventStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	eventChan := make(chan event, 2)
-	e.register <- eventChan
-	defer func() {
-		e.unregister <- eventChan
-	}()
+	select {
+	case e.register <- eventChan:
+		defer func() {
+			e.unregister <- eventChan
+		}()
+	default:
+		fmt.Fprintln(w, "event: shutdown")
+		return
+	}
 
 	if e.onConnect != nil {
 		go func() {
@@ -112,15 +117,34 @@ func (e *EventStream) Len() int {
 	return len(e.clients)
 }
 
+// Shutdown the event stream
+func (e *EventStream) Shutdown() {
+	close(e.bus)
+	close(e.register)
+
+	for client := range e.clients {
+		delete(e.clients, client)
+		close(client)
+	}
+}
+
 func (e *EventStream) run() {
 	for {
 		select {
-		case client := <-e.register:
+		case client, ok := <-e.register:
+			if !ok {
+				return
+			}
+
 			e.clients[client] = struct{}{}
 		case client := <-e.unregister:
 			delete(e.clients, client)
 			close(client)
-		case event := <-e.bus:
+		case event, ok := <-e.bus:
+			if !ok {
+				return
+			}
+
 			for client := range e.clients {
 				select {
 				case client <- event:
